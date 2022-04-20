@@ -763,7 +763,6 @@ pub const OpenSelfDebugInfoError = error{
     UnsupportedOperatingSystem,
 };
 
-/// TODO resources https://github.com/ziglang/zig/issues/4353
 pub fn openSelfDebugInfo(allocator: mem.Allocator) anyerror!DebugInfo {
     nosuspend {
         if (builtin.strip_debug_info)
@@ -788,7 +787,6 @@ pub fn openSelfDebugInfo(allocator: mem.Allocator) anyerror!DebugInfo {
 
 /// This takes ownership of coff_file: users of this function should not close
 /// it themselves, even on error.
-/// TODO resources https://github.com/ziglang/zig/issues/4353
 /// TODO it's weird to take ownership even on error, rework this code.
 fn readCoffDebugInfo(allocator: mem.Allocator, coff_file: File) !ModuleDebugInfo {
     nosuspend {
@@ -857,7 +855,6 @@ fn chopSlice(ptr: []const u8, offset: u64, size: u64) ![]const u8 {
 
 /// This takes ownership of elf_file: users of this function should not close
 /// it themselves, even on error.
-/// TODO resources https://github.com/ziglang/zig/issues/4353
 /// TODO it's weird to take ownership even on error, rework this code.
 pub fn readElfDebugInfo(allocator: mem.Allocator, elf_file: File) !ModuleDebugInfo {
     nosuspend {
@@ -931,7 +928,6 @@ pub fn readElfDebugInfo(allocator: mem.Allocator, elf_file: File) !ModuleDebugIn
     }
 }
 
-/// TODO resources https://github.com/ziglang/zig/issues/4353
 /// This takes ownership of macho_file: users of this function should not close
 /// it themselves, even on error.
 /// TODO it's weird to take ownership even on error, rework this code.
@@ -1144,7 +1140,10 @@ pub const DebugInfo = struct {
     }
 
     pub fn deinit(self: *DebugInfo) void {
-        // TODO: resources https://github.com/ziglang/zig/issues/4353
+        var it = self.address_map.valueIterator();
+        while (it.next()) |di| {
+            di.deinit();
+        }
         self.address_map.deinit();
     }
 
@@ -1504,6 +1503,7 @@ pub const ModuleDebugInfo = switch (native_os) {
                 return error.MissingDebugInfo;
 
             var di = DW.DwarfInfo{
+                .arena = std.heap.ArenaAllocator.init(self.allocator()),
                 .endian = .Little,
                 .debug_info = try chopSlice(mapped_mem, debug_info.offset, debug_info.size),
                 .debug_abbrev = try chopSlice(mapped_mem, debug_abbrev.offset, debug_abbrev.size),
@@ -1519,7 +1519,7 @@ pub const ModuleDebugInfo = switch (native_os) {
                     null,
             };
 
-            try DW.openDwarfDebugInfo(&di, self.allocator());
+            try DW.openDwarfDebugInfo(&di);
             var info = OFileInfo{
                 .di = di,
                 .addr_table = addr_table,

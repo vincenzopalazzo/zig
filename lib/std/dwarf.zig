@@ -527,6 +527,7 @@ fn getAbbrevTableEntry(abbrev_table: *const AbbrevTable, abbrev_code: u64) ?*con
 }
 
 pub const DwarfInfo = struct {
+    arena: std.heap.ArenaAllocator,
     endian: std.builtin.Endian,
     // No memory is owned by the DwarfInfo
     debug_info: []const u8,
@@ -540,8 +541,12 @@ pub const DwarfInfo = struct {
     compile_unit_list: ArrayList(CompileUnit) = undefined,
     func_list: ArrayList(Func) = undefined,
 
-    pub fn allocator(self: DwarfInfo) mem.Allocator {
-        return self.abbrev_table_list.allocator;
+    pub fn allocator(self: *DwarfInfo) mem.Allocator {
+        return self.arena.allocator();
+    }
+
+    pub fn deinit(self: *DwarfInfo) void {
+        self.arena.deinit();
     }
 
     pub fn getSymbolName(di: *DwarfInfo, address: u64) ?[]const u8 {
@@ -598,8 +603,6 @@ pub const DwarfInfo = struct {
 
             while ((try seekable.getPos()) < next_unit_pos) {
                 const die_obj = (try di.parseDie(in, abbrev_table, is_64)) orelse continue;
-                defer die_obj.attrs.deinit();
-
                 const after_die_offset = try seekable.getPos();
 
                 switch (die_obj.tag_id) {
@@ -817,7 +820,6 @@ pub const DwarfInfo = struct {
 
         try seekable.seekTo(offset);
         var result = AbbrevTable.init(di.allocator());
-        errdefer result.deinit();
         while (true) {
             const abbrev_code = try leb.readULEB128(u64, in);
             if (abbrev_code == 0) return result;
@@ -907,7 +909,6 @@ pub const DwarfInfo = struct {
         const opcode_base = try in.readByte();
 
         const standard_opcode_lengths = try di.allocator().alloc(u8, opcode_base - 1);
-        defer di.allocator().free(standard_opcode_lengths);
 
         {
             var i: usize = 0;
@@ -1071,10 +1072,11 @@ pub const DwarfInfo = struct {
 /// the DwarfInfo fields before calling. These fields can be left undefined:
 /// * abbrev_table_list
 /// * compile_unit_list
-pub fn openDwarfDebugInfo(di: *DwarfInfo, allocator: mem.Allocator) !void {
-    di.abbrev_table_list = ArrayList(AbbrevTableHeader).init(allocator);
-    di.compile_unit_list = ArrayList(CompileUnit).init(allocator);
-    di.func_list = ArrayList(Func).init(allocator);
+pub fn openDwarfDebugInfo(di: *DwarfInfo) !void {
+    const gpa = di.allocator();
+    di.abbrev_table_list = ArrayList(AbbrevTableHeader).init(gpa);
+    di.compile_unit_list = ArrayList(CompileUnit).init(gpa);
+    di.func_list = ArrayList(Func).init(gpa);
     try di.scanAllFunctions();
     try di.scanAllCompileUnits();
 }

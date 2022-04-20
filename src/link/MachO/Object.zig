@@ -103,6 +103,7 @@ const DebugInfo = struct {
         };
 
         var inner: dwarf.DwarfInfo = .{
+            .arena = std.heap.ArenaAllocator.init(allocator),
             .endian = .Little,
             .debug_info = debug_info,
             .debug_abbrev = debug_abbrev,
@@ -111,7 +112,7 @@ const DebugInfo = struct {
             .debug_line_str = debug_line_str,
             .debug_ranges = debug_ranges,
         };
-        try dwarf.openDwarfDebugInfo(&inner, allocator);
+        try dwarf.openDwarfDebugInfo(&inner);
 
         return DebugInfo{
             .inner = inner,
@@ -131,9 +132,7 @@ const DebugInfo = struct {
         allocator.free(self.debug_line);
         allocator.free(self.debug_line_str);
         allocator.free(self.debug_ranges);
-        self.inner.abbrev_table_list.deinit();
-        self.inner.compile_unit_list.deinit();
-        self.inner.func_list.deinit();
+        self.inner.deinit();
     }
 };
 
