@@ -576,21 +576,31 @@ fn genBody(self: *Self, body: []const Air.Inst.Index) InnerError!void {
             // zig fmt: off
             .add             => try self.airBinOp(inst),
             .addwrap         => try self.airBinOp(inst),
-            .add_sat         => try self.airAddSat(inst),
             .sub             => try self.airBinOp(inst),
             .subwrap         => try self.airBinOp(inst),
-            .sub_sat         => try self.airSubSat(inst),
+            .bool_and        => try self.airBinOp(inst),
+            .bool_or         => try self.airBinOp(inst),
+            .bit_and         => try self.airBinOp(inst),
+            .bit_or          => try self.airBinOp(inst),
+            .xor             => try self.airBinOp(inst),
+
+            .ptr_add         => try self.airPtrArithmetic(inst, .ptr_add),
+            .ptr_sub         => try self.airPtrArithmetic(inst, .ptr_sub),
+
+            .shr, .shr_exact => try self.airShlShrBinOp(inst),
+            .shl, .shl_exact => try self.airShlShrBinOp(inst),
+
             .mul             => try self.airMulDivBinOp(inst),
             .mulwrap         => try self.airMulDivBinOp(inst),
-            .mul_sat         => try self.airMulSat(inst),
             .rem             => try self.airMulDivBinOp(inst),
             .mod             => try self.airMulDivBinOp(inst),
-            .shl, .shl_exact => try self.airShlShrBinOp(inst),
+
+            .add_sat         => try self.airAddSat(inst),
+            .sub_sat         => try self.airSubSat(inst),
+            .mul_sat         => try self.airMulSat(inst),
             .shl_sat         => try self.airShlSat(inst),
             .min             => try self.airMin(inst),
             .max             => try self.airMax(inst),
-            .ptr_add         => try self.airBinOp(inst),
-            .ptr_sub         => try self.airBinOp(inst),
             .slice           => try self.airSlice(inst),
 
             .sqrt,
@@ -625,13 +635,6 @@ fn genBody(self: *Self, body: []const Air.Inst.Index) InnerError!void {
 
             .cmp_vector => try self.airCmpVector(inst),
             .cmp_lt_errors_len => try self.airCmpLtErrorsLen(inst),
-
-            .bool_and        => try self.airBinOp(inst),
-            .bool_or         => try self.airBinOp(inst),
-            .bit_and         => try self.airBinOp(inst),
-            .bit_or          => try self.airBinOp(inst),
-            .xor             => try self.airBinOp(inst),
-            .shr, .shr_exact => try self.airShlShrBinOp(inst),
 
             .alloc           => try self.airAlloc(inst),
             .ret_ptr         => try self.airRetPtr(inst),
@@ -1239,6 +1242,24 @@ fn airBinOp(self: *Self, inst: Air.Inst.Index) !void {
     }
 
     const tag = self.air.instructions.items(.tag)[inst];
+    const lhs = try self.resolveInst(bin_op.lhs);
+    const rhs = try self.resolveInst(bin_op.rhs);
+    const lhs_ty = self.air.typeOf(bin_op.lhs);
+    const rhs_ty = self.air.typeOf(bin_op.rhs);
+
+    const result = try self.genBinOp(tag, inst, lhs, rhs, lhs_ty, rhs_ty);
+
+    return self.finishAir(inst, result, .{ bin_op.lhs, bin_op.rhs, .none });
+}
+
+fn airPtrArithmetic(self: *Self, inst: Air.Inst.Index, tag: Air.Inst.Tag) !void {
+    const ty_pl = self.air.instructions.items(.data)[inst].ty_pl;
+    const bin_op = self.air.extraData(Air.Bin, ty_pl.payload).data;
+
+    if (self.liveness.isUnused(inst)) {
+        return self.finishAir(inst, .dead, .{ bin_op.lhs, bin_op.rhs, .none });
+    }
+
     const lhs = try self.resolveInst(bin_op.lhs);
     const rhs = try self.resolveInst(bin_op.rhs);
     const lhs_ty = self.air.typeOf(bin_op.lhs);
